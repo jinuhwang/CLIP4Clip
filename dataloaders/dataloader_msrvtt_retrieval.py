@@ -88,6 +88,8 @@ class MSRVTT_DataLoader(Dataset):
         # Pair x L x T x 3 x H x W
         video = np.zeros((len(choice_video_ids), self.max_frames, 1, 3,
                           self.rawVideoExtractor.size, self.rawVideoExtractor.size), dtype=np.float)
+        
+        video_frame_idx = np.zeros((len(choice_video_ids), self.max_frames), dtype=np.int)
 
         for i, video_id in enumerate(choice_video_ids):
             # Individual for YoucokII dataset, due to it video format
@@ -104,13 +106,16 @@ class MSRVTT_DataLoader(Dataset):
                 if self.max_frames < raw_video_slice.shape[0]:
                     if self.slice_framepos == 0:
                         video_slice = raw_video_slice[:self.max_frames, ...]
+                        video_frame_indx = np.array(range(self.max))
                     elif self.slice_framepos == 1:
                         video_slice = raw_video_slice[-self.max_frames:, ...]
+                        video_frame_indx = np.array(range(raw_video_slice.shape[0] - self.max_frames, raw_video_slice.shape[0]))
                     else:
-                        sample_indx = np.linspace(0, raw_video_slice.shape[0] - 1, num=self.max_frames, dtype=int)
-                        video_slice = raw_video_slice[sample_indx, ...]
+                        video_frame_indx = np.linspace(0, raw_video_slice.shape[0] - 1, num=self.max_frames, dtype=int)
+                        video_slice = raw_video_slice[video_frame_indx, ...]
                 else:
                     video_slice = raw_video_slice
+                    video_frame_indx = np.array(range(raw_video_slice.shape[0]))
 
                 video_slice = self.rawVideoExtractor.process_frame_order(video_slice, frame_order=self.frame_order)
 
@@ -120,21 +125,25 @@ class MSRVTT_DataLoader(Dataset):
                     pass
                 else:
                     video[i][:slice_len, ...] = video_slice
+                    video_frame_idx[i][:slice_len] = video_frame_indx
             else:
                 print("video path: {} error. video id: {}".format(video_path, video_id))
 
         for i, v_length in enumerate(max_video_length):
             video_mask[i][:v_length] = [1] * v_length
 
-        return video, video_mask
+        return video, video_frame_idx, video_mask
+
+    
+    
 
     def __getitem__(self, idx):
         video_id = self.data['video_id'].values[idx]
         sentence = self.data['sentence'].values[idx]
 
         pairs_text, pairs_mask, pairs_segment, choice_video_ids = self._get_text(video_id, sentence)
-        video, video_mask = self._get_rawvideo(choice_video_ids)
-        return pairs_text, pairs_mask, pairs_segment, video, video_mask
+        video, video_frame_idx, video_mask = self._get_rawvideo(choice_video_ids)
+        return pairs_text, pairs_mask, pairs_segment, np.array(int(video_id[5:])), video, video_frame_idx, video_mask
 
 class MSRVTT_TrainDataLoader(Dataset):
     """MSRVTT train dataset loader."""

@@ -103,6 +103,8 @@ def get_args(description='CLIP4Clip on Retrieval Task'):
                         help="choice a similarity header.")
 
     parser.add_argument("--pretrained_clip_name", default="ViT-B/32", type=str, help="Choose a CLIP version")
+    
+    parser.add_argument("--feature_dir", default="", type=str, help="path to pre-extracted features")
 
     args = parser.parse_args()
 
@@ -181,7 +183,7 @@ def init_model(args, device, n_gpu, local_rank):
     return model
 
 def prep_optimizer(args, model, num_train_optimization_steps, device, n_gpu, local_rank, coef_lr=1.):
-
+ 
     if hasattr(model, 'module'):
         model = model.module
 
@@ -238,12 +240,24 @@ def load_model(epoch, args, n_gpu, device, model_file=None):
         model_file = os.path.join(args.output_dir, "pytorch_model.bin.{}".format(epoch))
     if os.path.exists(model_file):
         model_state_dict = torch.load(model_file, map_location='cpu')
+        
+        # print("Model State Dictionary:")
+        # print(model_state_dict)
+
+        # # Alternatively, you can print keys, values, or other information
+        # print("\nKeys in the Model State Dictionary:")
+        # for key in model_state_dict.keys():
+        #     print(key)
+        # exit(0)
+        # # Print the size of the model state dictionary
+        # print("\nSize of the Model State Dictionary:")
+        # print(len(model_state_dict))
+
         if args.local_rank == 0:
             logger.info("Model loaded from %s", model_file)
         # Prepare model
         cache_dir = args.cache_dir if args.cache_dir else os.path.join(str(PYTORCH_PRETRAINED_BERT_CACHE), 'distributed')
         model = CLIP4Clip.from_pretrained(args.cross_model, cache_dir=cache_dir, state_dict=model_state_dict, task_config=args)
-
         model.to(device)
     else:
         model = None
@@ -256,14 +270,14 @@ def train_epoch(epoch, args, model, train_dataloader, device, n_gpu, optimizer, 
     log_step = args.n_display
     start_time = time.time()
     total_loss = 0
-
+    # return 1, 1000
     for step, batch in enumerate(train_dataloader):
         if n_gpu == 1:
             # multi-gpu does scattering it-self
             batch = tuple(t.to(device=device, non_blocking=True) for t in batch)
 
         input_ids, input_mask, segment_ids, video, video_mask = batch
-        loss = model(input_ids, segment_ids, input_mask, video, video_mask)
+        loss = model(args.feature_dir, input_ids, segment_ids, input_mask, video, video_mask)
 
         if n_gpu > 1:
             loss = loss.mean()  # mean() to average on multi-gpu.
@@ -358,7 +372,7 @@ def eval_epoch(args, model, test_dataloader, device, n_gpu):
         # ----------------------------
         for bid, batch in enumerate(test_dataloader):
             batch = tuple(t.to(device) for t in batch)
-            input_ids, input_mask, segment_ids, video, video_mask = batch
+            input_ids, input_mask, segment_ids, video_ids, video, video_frame_idx, video_mask = batch
 
             if multi_sentence_:
                 # multi-sentences retrieval means: one clip has two or more descriptions.
@@ -372,16 +386,42 @@ def eval_epoch(args, model, test_dataloader, device, n_gpu):
 
                 if len(filter_inds) > 0:
                     video, video_mask = video[filter_inds, ...], video_mask[filter_inds, ...]
-                    visual_output = model.get_visual_output(video, video_mask)
+                    visual_output = model.get_visual_output(args.feature_dir, video_ids, video, video_frame_idx, video_mask)
                     batch_visual_output_list.append(visual_output)
                     batch_list_v.append((video_mask,))
                 total_video_num += b
             else:
-                sequence_output, visual_output = model.get_sequence_visual_output(input_ids, segment_ids, input_mask, video, video_mask)
-
+                sequence_output, visual_output = model.get_sequence_visual_output(args.feature_dir, input_ids, segment_ids, input_mask, video_ids, video, video_frame_idx, video_mask)
                 batch_sequence_output_list.append(sequence_output)
                 batch_list_t.append((input_mask, segment_ids,))
+                # print("***device:", device)
+                # print("***visual_output.device:", visual_output.device)
+                visual_output = visual_output.to(device)
+                # print("***visual_output.device:", visual_output.device)
+                
+                # def print_size(var_name, var):
+                #     if torch.is_tensor(var):
+                #         print(f"{var_name} size: {var.size()}")
 
+                # # Print type, content, and size of variables
+                # print("Type, content, and size of variables:")
+                # # print(f"input_ids: {type(input_ids)}, {input_ids}")
+                # print_size("input_ids", input_ids)
+
+                # # print(f"input_mask: {type(input_mask)}, {input_mask}")
+                # print_size("input_mask", input_mask)
+
+                # # print(f"segment_ids: {type(segment_ids)}, {segment_ids}")
+                # print_size("segment_ids", segment_ids)
+
+                # # print(f"video: {type(video)}, {video}")
+                # print_size("video", video)
+
+                # # print(f"video_mask: {type(video_mask)}, {video_mask}")
+                # print_size("video_mask", video_mask)
+
+                # # print(f"visual_output: {type(visual_output)}, {visual_output}")
+                # print_size("visual_output", visual_output)
                 batch_visual_output_list.append(visual_output)
                 batch_list_v.append((video_mask,))
 
@@ -390,7 +430,8 @@ def eval_epoch(args, model, test_dataloader, device, n_gpu):
         # ----------------------------------
         # 2. calculate the similarity
         # ----------------------------------
-        if n_gpu > 1:
+        # if n_gpu > 1:
+        if False:
             device_ids = list(range(n_gpu))
             batch_list_t_splits = []
             batch_list_v_splits = []
@@ -399,33 +440,67 @@ def eval_epoch(args, model, test_dataloader, device, n_gpu):
             bacth_len = len(batch_list_t)
             split_len = (bacth_len + n_gpu - 1) // n_gpu
             for dev_id in device_ids:
+                print(f"{dev_id}, check1-1")
                 s_, e_ = dev_id * split_len, (dev_id + 1) * split_len
                 if dev_id == 0:
+                    print(f"{dev_id}, check1-2")
                     batch_list_t_splits.append(batch_list_t[s_:e_])
                     batch_list_v_splits.append(batch_list_v)
-
+                    torch.cuda.synchronize()
                     batch_t_output_splits.append(batch_sequence_output_list[s_:e_])
                     batch_v_output_splits.append(batch_visual_output_list)
+                    torch.cuda.synchronize()
                 else:
+                    print(f"{dev_id}, check1-3")
                     devc = torch.device('cuda:{}'.format(str(dev_id)))
+                    print(f"{dev_id}, check1-4")
                     devc_batch_list = [tuple(t.to(devc) for t in b) for b in batch_list_t[s_:e_]]
+                    print(f"{dev_id}, check1-5")
                     batch_list_t_splits.append(devc_batch_list)
+                    torch.cuda.synchronize()
+                    print(f"{dev_id}, check1-6")
                     devc_batch_list = [tuple(t.to(devc) for t in b) for b in batch_list_v]
+                    print(f"{dev_id}, check1-7")
                     batch_list_v_splits.append(devc_batch_list)
+                    print(f"{dev_id}, check1-8")
+                    torch.cuda.synchronize()
 
                     devc_batch_list = [b.to(devc) for b in batch_sequence_output_list[s_:e_]]
+                    print(f"{dev_id}, check1-9")
                     batch_t_output_splits.append(devc_batch_list)
+                    torch.cuda.synchronize()
+                    print(f"{dev_id}, check1-10")
+                    print("len(batch_visual_output_list): ", len(batch_visual_output_list))
+                    for i, b in enumerate(batch_visual_output_list):
+                        print(i, b)
                     devc_batch_list = [b.to(devc) for b in batch_visual_output_list]
+                    print(f"{dev_id}, check1-11")
                     batch_v_output_splits.append(devc_batch_list)
-
+                    torch.cuda.synchronize()
+            print(f"check2")
             parameters_tuple_list = [(batch_list_t_splits[dev_id], batch_list_v_splits[dev_id],
                                       batch_t_output_splits[dev_id], batch_v_output_splits[dev_id]) for dev_id in device_ids]
             parallel_outputs = parallel_apply(_run_on_single_gpu, model, parameters_tuple_list, device_ids)
+            print(f"check3")
             sim_matrix = []
             for idx in range(len(parallel_outputs)):
                 sim_matrix += parallel_outputs[idx]
             sim_matrix = np.concatenate(tuple(sim_matrix), axis=0)
+            print(f"check4")
         else:
+            # print("batch_list_t")
+            # for b in batch_list_t:
+            #     print(b.device)
+            # print("batch_list_v")
+            # for b in batch_list_v:
+            #     print(b.device)
+            # print("batch_sequence_output_list")
+            # for b in batch_sequence_output_list:
+            #     print(b.device)
+            # print("batch_visual_output_list")
+            # for b in batch_visual_output_list:
+            #     print(b.device)
+            # print(batch_list_t.device, batch_list_v.device, batch_sequence_output_list.device, batch_visual_output_list.device)
             sim_matrix = _run_on_single_gpu(model, batch_list_t, batch_list_v, batch_sequence_output_list, batch_visual_output_list)
             sim_matrix = np.concatenate(tuple(sim_matrix), axis=0)
 
@@ -562,6 +637,7 @@ def main():
                 ## Run on val dataset, this process is *TIME-consuming*.
                 # logger.info("Eval on val dataset")
                 # R1 = eval_epoch(args, model, val_dataloader, device, n_gpu)
+                
 
                 R1 = eval_epoch(args, model, test_dataloader, device, n_gpu)
                 if best_score <= R1:
@@ -576,7 +652,10 @@ def main():
 
     elif args.do_eval:
         if args.local_rank == 0:
+            path = '/mnt/ssd3/CLIP4Clip/ckpts/ckpt_msrvtt_retrieval_looseType/pytorch_model.bin.1'
+            model = load_model(-1, args, n_gpu, device, model_file=path)
             eval_epoch(args, model, test_dataloader, device, n_gpu)
 
 if __name__ == "__main__":
     main()
+
