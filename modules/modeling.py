@@ -308,10 +308,14 @@ class CLIP4Clip(CLIP4ClipPreTrainedModel):
             video_id = video_ids[i]
             for j in range(frame_len):
                 frame_idx = video_frame_idx[i][0][j]
-                feature_file_path = os.path.join(feature_dir, f'video{video_id}_o_{frame_idx}.npz')
-                feature_archive = np.load(feature_file_path)
-                feature_numpy_array = feature_archive['embeddings']
-                feature_arrays.append(feature_numpy_array)
+                try:
+                    feature_file_path = os.path.join(feature_dir, f'video{video_id}_o_{frame_idx}.npz')
+                    feature_archive = np.load(feature_file_path)
+                    feature_numpy_array = feature_archive['embeddings']
+                    feature_arrays.append(feature_numpy_array)
+                except:
+                    print(f'video{video_id}_o_{frame_idx}.npz is not Available.')
+                    feature_arrays.append(feature_numpy_array)
 
         feature_concatenated_numpy_array = np.concatenate(feature_arrays, axis=0)
 
