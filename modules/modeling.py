@@ -15,6 +15,11 @@ from modules.module_cross import CrossModel, CrossConfig, Transformer as Transfo
 from modules.module_clip import CLIP, convert_weights
 from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
 
+import sys
+if '/workspace' not in sys.path:
+    sys.path.append('/workspace')
+from vgenie.dataset.utils import load_embedding
+
 logger = logging.getLogger(__name__)
 allgather = AllGather.apply
 
@@ -310,8 +315,7 @@ class CLIP4Clip(CLIP4ClipPreTrainedModel):
                 frame_idx = video_frame_idx[i][0][j]
                 try:
                     feature_file_path = os.path.join(feature_dir, f'video{video_id}_o_{frame_idx}.npz')
-                    feature_archive = np.load(feature_file_path)
-                    feature_numpy_array = feature_archive['embeddings']
+                    feature_numpy_array = load_embedding(feature_file_path, return_pt=False)
                     feature_arrays.append(feature_numpy_array)
                 except:
                     print(f'video{video_id}_o_{frame_idx}.npz is not Available.')

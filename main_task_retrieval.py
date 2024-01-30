@@ -18,6 +18,12 @@ from modules.optimization import BertAdam
 from util import parallel_apply, get_logger
 from dataloaders.data_dataloaders import DATALOADER_DICT
 
+import sys
+if '/workspace' not in sys.path:
+    sys.path.append('/workspace')
+from vgenie.dataset.utils import get_feature_dir
+
+
 torch.distributed.init_process_group(backend="nccl")
 
 global logger
@@ -104,7 +110,7 @@ def get_args(description='CLIP4Clip on Retrieval Task'):
 
     parser.add_argument("--pretrained_clip_name", default="ViT-B/32", type=str, help="Choose a CLIP version")
     
-    parser.add_argument("--feature_dir", default="", type=str, help="path to pre-extracted features")
+    parser.add_argument("--model_name", default="", type=str, help="path to pre-extracted features")
 
     args = parser.parse_args()
 
@@ -537,6 +543,12 @@ def eval_epoch(args, model, test_dataloader, device, n_gpu):
 def main():
     global logger
     args = get_args()
+
+    if args.model_name == "original":
+        args.feature_dir = get_feature_dir('msrvtt', 'openai/clip-vit-base-patch16', 1, 'test')
+    else:
+        raise NotImplementedError
+
     args = set_seed_logger(args)
     device, n_gpu = init_device(args, args.local_rank)
 
