@@ -18,7 +18,7 @@ from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
 import sys
 if '/workspace' not in sys.path:
     sys.path.append('/workspace')
-from vgenie.dataset.utils import load_embedding
+from vgenie.utils.dataset import load_embedding
 
 logger = logging.getLogger(__name__)
 allgather = AllGather.apply

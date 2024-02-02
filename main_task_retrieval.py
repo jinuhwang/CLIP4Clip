@@ -21,7 +21,7 @@ from dataloaders.data_dataloaders import DATALOADER_DICT
 import sys
 if '/workspace' not in sys.path:
     sys.path.append('/workspace')
-from vgenie.dataset.utils import get_feature_dir
+from vgenie.utils.dataset import get_feature_dir
 
 
 torch.distributed.init_process_group(backend="nccl")
