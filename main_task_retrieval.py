@@ -21,8 +21,10 @@ from dataloaders.data_dataloaders import DATALOADER_DICT
 import sys
 if '/workspace' not in sys.path:
     sys.path.append('/workspace')
-from vgenie.utils.dataset import get_feature_dir
+from vgenie.utils import get_feature_dir, get_feature_dir_reuse, get_feature_dir_cmc, get_feature_dir_eventful, is_integer
 
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 torch.distributed.init_process_group(backend="nccl")
 
@@ -111,6 +113,9 @@ def get_args(description='CLIP4Clip on Retrieval Task'):
     parser.add_argument("--pretrained_clip_name", default="ViT-B/32", type=str, help="Choose a CLIP version")
     
     parser.add_argument("--model_name", default="", type=str, help="path to pre-extracted features")
+    parser.add_argument("--fps", type=float, help="frame per second", required=True)
+    parser.add_argument("--eventful_top_r", default=1, type=int, help="top r for eventful")
+    parser.add_argument("--cmc_threshold", default=1, type=int, help="Threshold for CMC")
 
     args = parser.parse_args()
 
@@ -283,7 +288,7 @@ def train_epoch(epoch, args, model, train_dataloader, device, n_gpu, optimizer, 
             batch = tuple(t.to(device=device, non_blocking=True) for t in batch)
 
         input_ids, input_mask, segment_ids, video, video_mask = batch
-        loss = model(args.feature_dir, input_ids, segment_ids, input_mask, video, video_mask)
+        loss = model(args.feature_dir, input_ids, segment_ids, input_mask, video, video_mask, fps=args.fps)
 
         if n_gpu > 1:
             loss = loss.mean()  # mean() to average on multi-gpu.
@@ -542,10 +547,30 @@ def eval_epoch(args, model, test_dataloader, device, n_gpu):
 
 def main():
     global logger
-    args = get_args()
+    args = get_args() 
+    
+    BASE_MODEL_NAME = 'openai/clip-vit-base-patch16'
 
-    if args.model_name == "original":
-        args.feature_dir = get_feature_dir('msrvtt', 'openai/clip-vit-base-patch16', 1, 'test')
+    if is_integer(args.fps):
+        args.fps = int(args.fps)
+    if "cmc" == args.model_name:
+        args.feature_dir = get_feature_dir_cmc(
+            'msrvtt',
+            BASE_MODEL_NAME,
+            args.fps,
+            'test',
+            cmc_threhshold=args.cmc_threhshold,
+        )
+    elif "eventful" == args.model_name:
+        args.feature_dir = get_feature_dir_eventful(
+            'msrvtt',
+            BASE_MODEL_NAME,
+            args.fps,
+            'test',
+            top_r=args.eventful_top_r,
+        )
+    elif args.model_name == "original":
+        args.feature_dir = get_feature_dir('msrvtt', BASE_MODEL_NAME, args.fps, 'test')
     else:
         raise NotImplementedError
 

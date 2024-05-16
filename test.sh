@@ -1,10 +1,10 @@
 #!/bin/bash
-if [[ $# -ne 1 ]] ; then
-    echo 'Usage: test.sh msrvtt/tryXXX'
+
+if [[ $# -lt 1 ]] ; then
+    echo 'Usage: $0 args...'
     exit 1
 fi
 
-MODEL=$1
 export DATA_PATH=/mnt/hdd2/MSRVTT/msrvtt_data
 python -m torch.distributed.launch main_task_retrieval.py \
     --do_eval \
@@ -25,4 +25,4 @@ python -m torch.distributed.launch main_task_retrieval.py \
     --linear_patch 2d \
     --sim_header meanP \
     --pretrained_clip_name ViT-B/16 \
-    --feature_dir /mnt/ssd2/dataset/msrvtt/reuse/fine_tuned_for_CLIP4Clip/${MODEL}/
+    "$@"

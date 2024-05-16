@@ -253,7 +253,7 @@ class CLIP4Clip(CLIP4ClipPreTrainedModel):
 
         self.apply(self.init_weights)
 
-    def forward(self, feature_dir, input_ids, token_type_ids, attention_mask, video, video_mask=None):
+    def forward(self, feature_dir, input_ids, token_type_ids, attention_mask, video, video_mask=None, fps=1):
         input_ids = input_ids.view(-1, input_ids.shape[-1])
         token_type_ids = token_type_ids.view(-1, token_type_ids.shape[-1])
         attention_mask = attention_mask.view(-1, attention_mask.shape[-1])
@@ -266,7 +266,7 @@ class CLIP4Clip(CLIP4ClipPreTrainedModel):
         video_frame = bs * ts
 
         sequence_output, visual_output = self.get_sequence_visual_output(feature_dir, input_ids, token_type_ids, attention_mask,
-                                                                         video, video_mask, shaped=True, video_frame=video_frame)
+                                                                         video, video_mask, shaped=True, video_frame=video_frame, fps=fps)
 
         if self.training:
             loss = 0.
@@ -293,7 +293,7 @@ class CLIP4Clip(CLIP4ClipPreTrainedModel):
 
         return sequence_hidden
 
-    def get_visual_output(self, feature_dir, video_ids, video, video_frame_idx, video_mask, shaped=False, video_frame=-1):
+    def get_visual_output(self, feature_dir, video_ids, video, video_frame_idx, video_mask, shaped=False, video_frame=-1, fps=1):
         if shaped is False:
             video_mask = video_mask.view(-1, video_mask.shape[-1])
             video = torch.as_tensor(video).float()
@@ -312,7 +312,7 @@ class CLIP4Clip(CLIP4ClipPreTrainedModel):
         for i in range(batch_size):
             video_id = video_ids[i]
             for j in range(frame_len):
-                frame_idx = video_frame_idx[i][0][j]
+                frame_idx = video_frame_idx[i][0][j] * fps
                 try:
                     feature_file_path = os.path.join(feature_dir, f'video{video_id}_o_{frame_idx}.npz')
                     feature_numpy_array = load_embedding(feature_file_path, return_pt=False)
@@ -327,7 +327,7 @@ class CLIP4Clip(CLIP4ClipPreTrainedModel):
 
         return visual_hidden
 
-    def get_sequence_visual_output(self, feature_dir, input_ids, token_type_ids, attention_mask, video_ids, video, video_frame_idx, video_mask, shaped=False, video_frame=-1):
+    def get_sequence_visual_output(self, feature_dir, input_ids, token_type_ids, attention_mask, video_ids, video, video_frame_idx, video_mask, shaped=False, video_frame=-2, fps=1):
         if shaped is False:
             # for i in range(16):
             #     for j in range(12):
@@ -343,7 +343,7 @@ class CLIP4Clip(CLIP4ClipPreTrainedModel):
             video_frame = bs * ts
 
         sequence_output = self.get_sequence_output(input_ids, token_type_ids, attention_mask, shaped=True)
-        visual_output = self.get_visual_output(feature_dir, video_ids, video, video_frame_idx, video_mask, shaped=True, video_frame=video_frame)
+        visual_output = self.get_visual_output(feature_dir, video_ids, video, video_frame_idx, video_mask, shaped=True, video_frame=video_frame, fps=fps)
 
         return sequence_output, visual_output
 
