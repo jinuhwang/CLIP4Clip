@@ -559,7 +559,7 @@ def main():
             BASE_MODEL_NAME,
             args.fps,
             'test',
-            cmc_threhshold=args.cmc_threhshold,
+            threshold=args.cmc_threshold,
         )
     elif "eventful" == args.model_name:
         args.feature_dir = get_feature_dir_eventful(
