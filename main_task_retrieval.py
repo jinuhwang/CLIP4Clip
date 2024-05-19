@@ -117,6 +117,10 @@ def get_args(description='CLIP4Clip on Retrieval Task'):
     parser.add_argument("--eventful_top_r", default=1, type=int, help="top r for eventful")
     parser.add_argument("--cmc_threshold", default=1, type=int, help="Threshold for CMC")
 
+    parser.add_argument("--is_inference_model", action='store_true', help="get the data from the inference model")
+    parser.add_argument("--reuse_model_name", type=str, help="like msrvtt/try294")
+    parser.add_argument('--epoch', type=int, default=None, help='upper epoch limit')
+
     args = parser.parse_args()
 
     if args.sim_header == "tightTransf":
@@ -571,6 +575,20 @@ def main():
         )
     elif args.model_name == "original":
         args.feature_dir = get_feature_dir('msrvtt', BASE_MODEL_NAME, args.fps, 'test')
+    elif args.model_name == "reuse":
+        tfeature_dir, ifeature_dir = get_feature_dir_reuse(
+            'msrvtt',
+            BASE_MODEL_NAME,
+            args.fps,
+            'test',
+            args.reuse_model_name,
+            is_training_and_inference=True,
+            epoch=args.epoch,
+        )
+        if args.is_inference_model:
+            args.feature_dir = ifeature_dir
+        else:
+            args.feature_dir = tfeature_dir
     else:
         raise NotImplementedError
 
