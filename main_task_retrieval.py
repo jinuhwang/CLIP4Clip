@@ -120,6 +120,7 @@ def get_args(description='CLIP4Clip on Retrieval Task'):
     parser.add_argument("--is_inference_model", action='store_true', help="get the data from the inference model")
     parser.add_argument("--reuse_model_name", type=str, help="like msrvtt/try294")
     parser.add_argument('--epoch', type=int, default=None, help='upper epoch limit')
+    parser.add_argument('--compute-interval', type=int, default=None, help='full computation interval')
 
     args = parser.parse_args()
 
@@ -584,6 +585,7 @@ def main():
             args.reuse_model_name,
             is_training_and_inference=True,
             epoch=args.epoch,
+            compute_interval=args.compute_interval,
         )
         if args.is_inference_model:
             args.feature_dir = ifeature_dir
