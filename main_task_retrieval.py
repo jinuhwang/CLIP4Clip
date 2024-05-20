@@ -9,6 +9,7 @@ import random
 import os
 from metrics import compute_metrics, tensor_text_to_video_metrics, tensor_video_to_text_sim
 import time
+import json
 import argparse
 from modules.tokenization_clip import SimpleTokenizer as ClipTokenizer
 from modules.file_utils import PYTORCH_PRETRAINED_BERT_CACHE
@@ -546,6 +547,32 @@ def eval_epoch(args, model, test_dataloader, device, n_gpu):
     logger.info("Video-to-Text:")
     logger.info('\t>>>  V2T$R@1: {:.1f} - V2T$R@5: {:.1f} - V2T$R@10: {:.1f} - V2T$Median R: {:.1f} - V2T$Mean R: {:.1f}'.
                 format(vt_metrics['R1'], vt_metrics['R5'], vt_metrics['R10'], vt_metrics['MR'], vt_metrics['MeanR']))
+    
+    accuracy_log = {
+        't2v': {
+            'R1': tv_metrics['R1'],
+            'R5': tv_metrics['R5'],
+            'R10': tv_metrics['R10'],
+            'MR': tv_metrics['MR'],
+            'MeanR': tv_metrics['MeanR'],
+        },
+        'v2t': {
+            'R1': vt_metrics['R1'],
+            'R5': vt_metrics['R5'],
+            'R10': vt_metrics['R10'],
+            'MR': vt_metrics['MR'],
+            'MeanR': vt_metrics['MeanR'],
+        }
+    }
+    
+
+    if args.is_inference_model:
+        log_dir = f'/workspace/scripts/{args.reuse_model_name}/{"none" if args.epoch is None else args.epoch}/{"none" if args.compute_interval is None else args.compute_interval}/iaccuracy.json'
+    else:
+        log_dir = f'/workspace/scripts/{args.reuse_model_name}/{"none" if args.epoch is None else args.epoch}/{"none" if args.compute_interval is None else args.compute_interval}/taccuracy.json'
+    os.makedirs(os.path.dirname(log_dir), exist_ok=True)
+    with open(f'{log_dir}', 'w') as f:
+        json.dump(accuracy_log, f, indent=4)
 
     R1 = tv_metrics['R1']
     return R1

@@ -6,7 +6,9 @@ if [[ $# -lt 1 ]] ; then
 fi
 
 export DATA_PATH=/mnt/hdd2/MSRVTT/msrvtt_data
-python -m torch.distributed.launch main_task_retrieval.py \
+python -m torch.distributed.launch \
+	--master_port 0 \
+	main_task_retrieval.py \
     --do_eval \
     --num_thread_reader=0 \
     --n_display=50 \
