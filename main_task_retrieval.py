@@ -22,7 +22,7 @@ from dataloaders.data_dataloaders import DATALOADER_DICT
 import sys
 if '/workspace' not in sys.path:
     sys.path.append('/workspace')
-from vgenie.utils import get_feature_dir, get_feature_dir_reuse, get_feature_dir_cmc, get_feature_dir_eventful, is_integer
+from vgenie.utils import get_feature_dir, get_feature_dir_reuse, get_feature_dir_cmc, get_feature_dir_eventful, get_feature_dir_diffrate, is_integer
 
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -618,6 +618,11 @@ def main():
             args.feature_dir = ifeature_dir
         else:
             args.feature_dir = tfeature_dir
+    elif 'diffrate-' in args.model_name:
+        diffrate_model_name = args.model_name.replace('diffrate-', 'original-')
+        args.feature_dir = get_feature_dir_diffrate('msrvtt', BASE_MODEL_NAME, args.fps, 'test', diffrate_model_name)
+    elif 'diffrate/' in args.model_name:
+        args.feature_dir = get_feature_dir_diffrate('msrvtt', BASE_MODEL_NAME, args.fps, 'test', args.model_name)
     else:
         raise NotImplementedError
 
