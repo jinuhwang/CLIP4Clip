@@ -6,12 +6,19 @@ import logging
 
 import torch
 from torch import nn
+import numpy as np
+import os
 
 from modules.until_module import PreTrainedModel, AllGather, CrossEn
 from modules.module_cross import CrossModel, CrossConfig, Transformer as TransformerClip
 
 from modules.module_clip import CLIP, convert_weights
 from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
+
+import sys
+if '/workspace' not in sys.path:
+    sys.path.append('/workspace')
+from dejavu.utils.dataset import load_embedding
 
 logger = logging.getLogger(__name__)
 allgather = AllGather.apply
@@ -246,7 +253,7 @@ class CLIP4Clip(CLIP4ClipPreTrainedModel):
 
         self.apply(self.init_weights)
 
-    def forward(self, input_ids, token_type_ids, attention_mask, video, video_mask=None):
+    def forward(self, feature_dir, input_ids, token_type_ids, attention_mask, video, video_mask=None, fps=1):
         input_ids = input_ids.view(-1, input_ids.shape[-1])
         token_type_ids = token_type_ids.view(-1, token_type_ids.shape[-1])
         attention_mask = attention_mask.view(-1, attention_mask.shape[-1])
@@ -258,8 +265,8 @@ class CLIP4Clip(CLIP4ClipPreTrainedModel):
         video = video.view(b * pair * bs * ts, channel, h, w)
         video_frame = bs * ts
 
-        sequence_output, visual_output = self.get_sequence_visual_output(input_ids, token_type_ids, attention_mask,
-                                                                         video, video_mask, shaped=True, video_frame=video_frame)
+        sequence_output, visual_output = self.get_sequence_visual_output(feature_dir, input_ids, token_type_ids, attention_mask,
+                                                                         video, video_mask, shaped=True, video_frame=video_frame, fps=fps)
 
         if self.training:
             loss = 0.
@@ -286,7 +293,7 @@ class CLIP4Clip(CLIP4ClipPreTrainedModel):
 
         return sequence_hidden
 
-    def get_visual_output(self, video, video_mask, shaped=False, video_frame=-1):
+    def get_visual_output(self, feature_dir, video_ids, video, video_frame_idx, video_mask, shaped=False, video_frame=-1, fps=1):
         if shaped is False:
             video_mask = video_mask.view(-1, video_mask.shape[-1])
             video = torch.as_tensor(video).float()
@@ -294,14 +301,37 @@ class CLIP4Clip(CLIP4ClipPreTrainedModel):
             video = video.view(b * pair * bs * ts, channel, h, w)
             video_frame = bs * ts
 
-        bs_pair = video_mask.size(0)
-        visual_hidden = self.clip.encode_image(video, video_frame=video_frame).float()
-        visual_hidden = visual_hidden.view(bs_pair, -1, visual_hidden.size(-1))
+        # bs_pair = video_mask.size(0)
+        # visual_hidden = self.clip.encode_image(video, video_frame=video_frame).float()
+        # visual_hidden = visual_hidden.view(bs_pair, -1, visual_hidden.size(-1))
+
+        # print(f"Loading feature from {feature_dir}")
+        batch_size, frame_len = video_mask.size(0), video_mask.size(1)
+        feature_arrays = []
+
+        for i in range(batch_size):
+            video_id = video_ids[i]
+            for j in range(frame_len):
+                frame_idx = video_frame_idx[i][0][j] * fps
+                try:
+                    feature_file_path = os.path.join(feature_dir, f'video{video_id}_o_{frame_idx}.npz')
+                    feature_numpy_array = load_embedding(feature_file_path, return_pt=False)
+                    feature_arrays.append(feature_numpy_array)
+                except:
+                    print(f'video{video_id}_o_{frame_idx}.npz is not Available.')
+                    feature_arrays.append(feature_numpy_array)
+
+        feature_concatenated_numpy_array = np.concatenate(feature_arrays, axis=0)
+
+        visual_hidden = torch.tensor(feature_concatenated_numpy_array).view(batch_size, frame_len, -1)
 
         return visual_hidden
 
-    def get_sequence_visual_output(self, input_ids, token_type_ids, attention_mask, video, video_mask, shaped=False, video_frame=-1):
+    def get_sequence_visual_output(self, feature_dir, input_ids, token_type_ids, attention_mask, video_ids, video, video_frame_idx, video_mask, shaped=False, video_frame=-2, fps=1):
         if shaped is False:
+            # for i in range(16):
+            #     for j in range(12):
+            #         print(f"frame {i}, {j}: shape - {video[i][0][j].size()}, {video[i][0][j]}")
             input_ids = input_ids.view(-1, input_ids.shape[-1])
             token_type_ids = token_type_ids.view(-1, token_type_ids.shape[-1])
             attention_mask = attention_mask.view(-1, attention_mask.shape[-1])
@@ -313,7 +343,7 @@ class CLIP4Clip(CLIP4ClipPreTrainedModel):
             video_frame = bs * ts
 
         sequence_output = self.get_sequence_output(input_ids, token_type_ids, attention_mask, shaped=True)
-        visual_output = self.get_visual_output(video, video_mask, shaped=True, video_frame=video_frame)
+        visual_output = self.get_visual_output(feature_dir, video_ids, video, video_frame_idx, video_mask, shaped=True, video_frame=video_frame, fps=fps)
 
         return sequence_output, visual_output
 
@@ -339,6 +369,8 @@ class CLIP4Clip(CLIP4ClipPreTrainedModel):
 
     def _mean_pooling_for_similarity_visual(self, visual_output, video_mask,):
         video_mask_un = video_mask.to(dtype=torch.float).unsqueeze(-1)
+        # print("visual_output:", visual_output.device)
+        # print("video_mask_un:", video_mask_un.device)
         visual_output = visual_output * video_mask_un
         video_mask_un_sum = torch.sum(video_mask_un, dim=1, dtype=torch.float)
         video_mask_un_sum[video_mask_un_sum == 0.] = 1.
